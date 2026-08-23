@@ -1,0 +1,407 @@
+# windows-dfir-lab59-suspicious-dll-name-investigation
+## Overview
+
+A DLL name by itself is not proof of malware.
+
+Windows contains many legitimate DLLs with familiar names, for example:
+
+kernel32.dll
+advapi32.dll
+user32.dll
+ole32.dll
+version.dll
+
+Attackers can exploit this familiarity by giving a malicious DLL a name that looks legitimate.
+
+For example, an attacker could use something resembling:
+
+C:\Users\<user>\AppData\Local\Temp\kernel32.dll
+
+while the legitimate Windows copy would normally reside somewhere such as:
+
+C:\Windows\System32\kernel32.dll
+
+The important DFIR question is therefore:
+
+Is this DLL actually the legitimate Windows component, or is it a suspicious file merely using a familiar name?
+
+We should look at the name + path + process + signature + hash, not just the filename.
+
+Suspicious path
+
+A familiar DLL name in:
+
+C:\Windows\System32\
+
+may be completely normal.
+
+The same name under:
+
+C:\Users\<user>\Downloads\
+C:\Users\<user>\AppData\Local\Temp\
+C:\Users\<user>\Desktop\
+C:\ProgramData\
+
+deserves more attention.
+
+Name similarity
+
+Examples:
+
+kernel32.dll
+kernel32s.dll
+kernel32x.dll
+kernel32.dll.bak
+kerne132.dll
+
+The last example can be especially interesting because l and 1 can look similar.
+
+Fake system-style names
+
+A suspicious file may use names such as:
+
+svchost.dll
+explorer.dll
+winlogon.dll
+lsass.dll
+csrss.dll
+services.dll
+
+Again, the name alone does not prove anything.
+
+
+This lab investigates suspicious DLL naming and potential DLL masquerading from a Windows DFIR perspective. The investigation focuses on an important forensic principle: a filename that looks like a legitimate Windows DLL does not automatically mean that the file is legitimate.
+
+A controlled investigation directory was created and populated with harmless text files using familiar DLL-style names such as `kernel32.dll`, `svchost.dll`, and `version.dll`. These files were deliberately not executed. Their paths, sizes, contents, SHA-256 hashes, and Authenticode signatures were compared with legitimate Windows DLLs located in `C:\Windows\System32`.
+
+Sysmon Event ID 1 and Event ID 3 were available on the endpoint. Sysmon Event ID 7 was not available, while PowerShell Event ID 4104 and Security Event ID 4688 did not provide relevant results for the controlled DLL-name artifacts.
+
+---
+
+# Investigation Objectives
+
+- Determine whether a DLL-looking filename represents a genuine Windows component or simply an artifact using a trusted name.
+- Establish whether the file is located where the legitimate Windows component would normally be expected.
+- Compare suspiciously named files with known system copies using size, metadata, and hashes.
+- Determine whether the files are actually DLL binaries or merely files using a .dll extension.
+- Evaluate Authenticode results as one part of the file-trust assessment.
+- Investigate whether any process was associated with the suspicious DLL artifacts.
+- Determine whether available telemetry provides evidence of the files being loaded or executed.
+- Examine surrounding network activity for additional context.
+- Identify limitations caused by unavailable Sysmon Image Load and other telemetry.
+- Distinguish DLL name masquerading from confirmed DLL execution, loading, or side-loading.
+- Produce an evidence-based assessment using artifact characteristics rather than filename alone.
+
+---
+
+# Investigation Scenario
+
+A Windows workstation is being reviewed after files with names resembling trusted Windows DLLs are discovered outside the normal system directories. Their names initially appear legitimate, but their locations and other characteristics raise questions about their authenticity.
+
+The analyst needs to determine:
+
+Whether the files are genuine Windows components.
+Whether their paths match legitimate Windows DLL locations.
+Whether their contents and sizes are consistent with real DLLs.
+Whether their hashes match the legitimate system versions.
+Whether their digital signatures provide evidence of trust.
+Whether any process attempted to use or load the files.
+Whether available network or process telemetry supports further suspicion.
+
+The investigation must ultimately distinguish between a misleading DLL filename and evidence of an actual malicious DLL being executed or loaded.
+
+---
+
+# Lab Environment
+
+| Component | Details |
+|---|---|
+| Operating System | Windows |
+| Investigation Type | Windows DFIR |
+| Investigation Directory | `C:\SuspiciousDLLNameLab` |
+| Test Files | `kernel32.dll`, `svchost.dll`, `version.dll` |
+| Sysmon Event ID 1 | Available |
+| Sysmon Event ID 3 | Available |
+| Sysmon Event ID 7 | Not available |
+| PowerShell Event ID 4104 | No relevant results |
+| Security Event ID 4688 | No relevant results |
+
+---
+
+# Controlled Test Artifacts
+
+The following harmless files were created:
+
+    C:\SuspiciousDLLNameLab\kernel32.dll
+    C:\SuspiciousDLLNameLab\svchost.dll
+    C:\SuspiciousDLLNameLab\version.dll
+
+The files were actually simple text files containing controlled laboratory messages.
+
+They were intentionally given DLL-like filenames to demonstrate how filename-based trust can be misleading.
+
+---
+
+# Baseline File Metadata
+
+The controlled artifacts had the following sizes:
+
+| File | Size |
+|---|---:|
+| `kernel32.dll` | 68 bytes |
+| `svchost.dll` | 82 bytes |
+| `version.dll` | 80 bytes |
+
+The files were created during the investigation on 23 August 2026.
+
+---
+
+# Legitimate Windows DLL Comparison
+
+The legitimate Windows DLL:
+
+    C:\Windows\System32\kernel32.dll
+
+was approximately:
+
+    783720 bytes
+
+The legitimate Windows file:
+
+    C:\Windows\System32\version.dll
+
+was approximately:
+
+    32584 bytes
+
+This demonstrated a significant difference between the real system components and the controlled test files.
+
+---
+
+# File Content Verification
+
+The controlled `kernel32.dll` was opened with:
+
+    Get-Content "C:\SuspiciousDLLNameLab\kernel32.dll"
+
+The output was:
+
+    LAB 59 - harmless test artifact
+
+This demonstrated that the file was actually a text file despite using a `.dll` extension.
+
+The test artifacts were never executed.
+
+---
+
+# SHA-256 Analysis
+
+The controlled test files produced the following hashes:
+
+    kernel32.dll
+    411DD104E12BF1F5FB6348E3CD1B64184991042099C7DC2B54DD13D6C88D43F2
+
+    svchost.dll
+    F2CF7D6453752FE108376C7EC1A207BC7655F8AE599415DF6632C11F1FEBDF4D
+
+    version.dll
+    0B250FA548FF7A03C94B21427E072813DF50255DF13A505E5E2CB1AE9836AC85
+
+The legitimate Windows `kernel32.dll` hash was:
+
+    4636F65D449B1353100578C6CB139933CF2B134F5E246119D18968873A058BED
+
+The legitimate Windows `version.dll` hash was:
+
+    AF45A728552CCFDCD9435C40ACE60A9354D7C1B52ABF507A2F1CB371DADA4FDE
+
+The hashes did not match.
+
+This provided strong evidence that the test artifacts were not the legitimate Windows DLLs.
+
+---
+
+# Digital Signature Analysis
+
+The legitimate Windows DLLs returned:
+
+    Status: Valid
+
+for both `kernel32.dll` and `version.dll`.
+
+The controlled test artifacts returned:
+
+    Status: UnknownError
+
+for the corresponding files.
+
+This was interpreted as supporting evidence that the test artifacts were not legitimate signed Windows components.
+
+The signature result was not treated as a standalone maliciousness verdict.
+
+---
+
+# Path Analysis
+
+The legitimate DLL path was:
+
+    C:\Windows\System32\kernel32.dll
+
+The controlled test file was:
+
+    C:\SuspiciousDLLNameLab\kernel32.dll
+
+The same filename appeared in two completely different locations.
+
+This demonstrated why full file paths are critical during DLL investigations.
+
+---
+
+# Sysmon Event ID 1
+
+Sysmon Event ID 1 was available and was queried during the investigation.
+
+The event log contained numerous process-creation events.
+
+The investigation searched for process activity potentially associated with the suspicious DLL names.
+
+No evidence was established that the controlled DLL artifacts were executed.
+
+---
+
+# Sysmon Event ID 3
+
+Sysmon Event ID 3 was available.
+
+The investigation returned numerous network connection events during the investigation timeframe.
+
+These events demonstrated that Sysmon network telemetry was functioning.
+
+No specific network activity was attributed to execution of the controlled DLL artifacts.
+
+---
+
+# Sysmon Event ID 7
+
+Sysmon Event ID 7 was queried to determine whether Image Load telemetry was available.
+
+The endpoint returned:
+
+    No events were found that match the specified selection criteria.
+
+Therefore:
+
+    Sysmon Event ID 7 = Not Available
+
+This limited the investigation's ability to directly investigate DLL image-load activity using Sysmon.
+
+---
+
+# PowerShell Event ID 4104
+
+PowerShell Event ID 4104 was queried for:
+
+    SuspiciousDLLNameLab
+    kernel32.dll
+    svchost.dll
+    version.dll
+
+No relevant events were returned.
+
+Therefore, PowerShell Script Block Logging did not provide additional evidence connecting the test artifacts to script execution.
+
+---
+
+# Windows Security Event ID 4688
+
+Windows Security Event ID 4688 was queried for the controlled DLL names.
+
+No relevant events were returned.
+
+This meant that Security process-creation telemetry could not be used to establish an execution relationship for the test DLL artifacts.
+
+This was documented as a telemetry limitation.
+
+---
+
+# Additional DLL Searches
+
+The investigation searched for DLLs in:
+
+    %TEMP%
+
+    %USERPROFILE%\Downloads
+
+    %LOCALAPPDATA%
+
+No relevant DLL artifacts were returned from these searches.
+
+One search initially used an invalid PowerShell parameter:
+
+    -ErrorActionContinue
+
+The command was corrected to:
+
+    -ErrorAction SilentlyContinue
+
+The corrected searches executed successfully.
+
+---
+
+# Evidence Correlation
+
+The investigation followed this model:
+
+    Suspicious DLL Name
+          |
+          v
+       Full Path
+          |
+          v
+       File Size
+          |
+          v
+      File Contents
+          |
+          v
+       SHA-256
+          |
+          v
+   Digital Signature
+          |
+          v
+    Process Evidence
+          |
+          v
+    Image Load Evidence
+          |
+          v
+    Network Evidence
+          |
+          v
+       Timeline
+
+This approach prevented the filename alone from being treated as proof of malicious activity.
+
+---
+
+
+# MITRE ATT&CK Relevance
+
+Potentially relevant techniques in a real incident could include:
+
+**T1036 — Masquerading**
+
+Relevant when an attacker makes a file appear legitimate by using misleading names, locations, or other attributes.
+
+**T1574.002 — DLL Side-Loading**
+
+Relevant only when evidence demonstrates that a legitimate executable loaded an attacker-controlled DLL through DLL search-order behavior.
+
+The controlled lab only demonstrates suspicious naming and masquerading concepts. It does not establish DLL side-loading.
+
+---
+
+# Disclaimer
+
+This lab used harmless text files with DLL-style filenames. The files were not executed, loaded, injected, or used as malware. No real Windows system DLLs were modified.
